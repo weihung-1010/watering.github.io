@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>植感生活 | 澆水提醒</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 FontAwesome 圖示 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- 引入 SortableJS (拖曳功能) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <!-- 引入 Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans TC"', 'sans-serif'],
+                    },
+                    colors: {
+                        nature: {
+                            50: '#f7f9f7',
+                            100: '#eef2ee',
+                            200: '#dbe5db',
+                            300: '#bccdbc',
+                            400: '#96ad96',
+                            500: '#759075',
+                            600: '#5c735c',
+                            700: '#4a5c4a',
+                            800: '#3d4a3d',
+                            900: '#333d33',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #f5f5f4; /* Stone 100 */
+            background-image: radial-gradient(#d6d3d1 1px, transparent 1px);
+            background-size: 20px 20px;
+            /* 防止 iOS 橡皮筋效果 */
+            overscroll-behavior-y: none;
+        }
+
+        /* 自定義捲軸 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #a8a29e; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #78716c; 
+        }
+
+        /* 卡片進場動畫 */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .card-enter {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        /* 澆水按鈕波紋效果 */
+        .water-btn {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .water-btn:active {
+            transform: scale(0.95);
+        }
+        
+        /* 圖片載入過渡 */
+        .plant-img {
+            transition: transform 0.5s ease;
+        }
+        .plant-card:hover .plant-img {
+            transform: scale(1.05);
+        }
+
+        /* 備註欄位的捲軸 */
+        textarea {
+            resize: none;
+        }
+
+        /* 拖曳時的樣式 */
+        .sortable-ghost {
+            opacity: 0.4;
+            background-color: #e7e5e4;
+        }
+        .sortable-drag {
+            cursor: grabbing;
+        }
+        
+        /* 當啟用拖曳時的卡片游標 */
+        .draggable-card {
+            cursor: grab;
+        }
+        .draggable-card:active {
+            cursor: grabbing;
+        }
+        
+        /* Loading Spinner */
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #759075;
+            width: 24px;
+            height: 24px;
+            -webkit-animation: spin 1s linear infinite; /* Safari */
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="text-stone-700 min-h-screen flex flex-col">
+
+    <!-- 頂部導航與標題 -->
+    <header class="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-stone-200 shadow-sm">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="bg-nature-500 text-white p-2 rounded-lg shadow-lg">
+                    <i class="fa-solid fa-leaf text-xl"></i>
+                </div>
+                <h1 class="text-xl md:text-2xl font-bold tracking-tight text-nature-800">植感生活 <span class="text-sm font-normal text-stone-500 hidden sm:inline-block ml-2">植物澆水管家</span></h1>
+            </div>
+            <button onclick="openAddModal()" class="bg-nature-600 hover:bg-nature-700 text-white px-5 py-2.5 rounded-full font-medium transition shadow-md flex items-center gap-2 text-sm md:text-base group">
+                <i class="fa-solid fa-plus transition-transform group-hover:rotate-90"></i> 新增植物
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-grow p-4 md:p-8 max-w-6xl mx-auto w-full">
+        
+        <!-- 新增/編輯植物表單 (預設隱藏) -->
+        <!-- 修改說明：
+             1. 加上 z-[60] 確保在最上層
+             2. 使用 fixed inset-0 滿版遮罩
+        -->
+        <div id="formModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm transition-opacity opacity-0">
+            <!-- 修改說明：
+                 1. max-h-[90vh] 改為 max-h-[90dvh] 以適應手機動態網址列
+                 2. 確保 flex flex-col 讓內部可以捲動
+            -->
+            <div class="bg-white rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-2xl transform transition-all scale-95 flex flex-col max-h-[90dvh]" id="formContent">
+                <div class="flex justify-between items-center mb-6 border-b border-stone-100 pb-4 flex-shrink-0">
+                    <h2 id="formTitle" class="text-xl font-bold text-stone-800 flex items-center gap-2">
+                        <i class="fa-solid fa-seedling text-nature-500"></i> 新增您的綠色夥伴
+                    </h2>
+                    <button onclick="closeForm()" class="text-stone-400 hover:text-stone-600 transition p-2 rounded-full hover:bg-stone-100">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+                
+                <!-- 修改說明：
+                     1. 加入 overscroll-contain 防止滑動到底部時捲動到主頁面
+                     2. custom-scrollbar 保留自定義捲軸樣式
+                -->
+                <div class="overflow-y-auto pr-2 custom-scrollbar flex-grow overscroll-contain">
+                    <form id="plantForm" onsubmit="handleFormSubmit(event)" class="space-y-5">
+                        <input type="hidden" id="editPlantId">
+
+                        <!-- 第一行：名稱與頻率 -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                                <label class="block text-sm font-medium text-stone-600 mb-1">植物暱稱</label>
+                                <input type="text" id="plantName" required placeholder="例如：龜背芋" 
+                                    class="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-nature-400 focus:bg-white transition">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-stone-600 mb-1">澆水頻率 (天)</label>
+                                <div class="relative">
+                                    <input type="number" id="waterFreq" required min="1" max="365" placeholder="例如：7" 
+                                        class="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-nature-400 focus:bg-white transition">
+                                    <span class="absolute right-4 top-2.5 text-stone-400 text-sm">天/次</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 第二行：上次澆水日期與備註 -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                                <label class="block text-sm font-medium text-stone-600 mb-1">上次澆水日期</label>
+                                <input type="date" id="lastWateredDate" required
+                                    class="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-nature-400 focus:bg-white transition text-stone-600">
+                            </div>
+                            <div class="md:row-span-2">
+                                 <label class="block text-sm font-medium text-stone-600 mb-1">備註 (選填)</label>
+                                 <textarea id="plantNotes" rows="4" placeholder="例如：放在陽台，需要多一點陽光..."
+                                    class="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-nature-400 focus:bg-white transition"></textarea>
+                            </div>
+                        </div>
+
+                        <!-- 圖片選擇 -->
+                        <div>
+                             <label class="block text-sm font-medium text-stone-600 mb-3">選擇外觀</label>
+                             
+                             <!-- 隱藏的檔案輸入框 -->
+                             <input type="file" id="imageUploadInput" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                             
+                             <div class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3" id="iconSelector">
+                                <!-- JS 會自動產生選項 -->
+                             </div>
+                             <input type="hidden" id="selectedIcon" value="plant-1">
+                             <input type="hidden" id="customImageData" value="">
+                        </div>
+                    </form>
+                </div>
+
+                <div class="pt-4 flex justify-end gap-3 border-t border-stone-100 mt-2 flex-shrink-0">
+                    <button type="button" onclick="closeForm()" class="px-6 py-2.5 rounded-xl text-stone-500 hover:bg-stone-100 font-medium transition">取消</button>
+                    <button onclick="document.getElementById('plantForm').requestSubmit()" class="px-8 py-2.5 bg-nature-600 hover:bg-nature-700 text-white rounded-xl shadow-lg shadow-nature-200 font-medium transition transform hover:-translate-y-0.5 flex items-center gap-2">
+                        <i class="fa-solid fa-check"></i> <span id="submitBtnText">加入清單</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 刪除確認 Modal -->
+        <div id="deleteModal" class="hidden fixed inset-0 z-[80] flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm transition-opacity opacity-0">
+            <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm transform transition-all scale-95 text-center" id="deleteModalContent">
+                <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500">
+                    <i class="fa-solid fa-trash-can text-2xl"></i>
+                </div>
+                <h3 class="text-xl font-bold text-stone-800 mb-2">確定要刪除嗎？</h3>
+                <p class="text-stone-500 text-sm mb-6">刪除後將無法復原這個植物夥伴的資料。</p>
+                
+                <div class="flex gap-3 justify-center">
+                    <button onclick="closeDeleteModal()" class="px-5 py-2.5 rounded-xl text-stone-500 hover:bg-stone-100 font-medium transition">取消</button>
+                    <button onclick="confirmDelete()" class="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-lg shadow-red-200 font-medium transition">確認刪除</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 統計與篩選按鈕 -->
+        <div id="statsBar" class="mb-6 flex flex-wrap items-center gap-3 hidden">
+            <span class="text-stone-500 text-sm font-medium mr-1">篩選狀態：</span>
+            
+            <button onclick="setFilter('all')" id="btn-filter-all" 
+                class="px-4 py-2 rounded-xl border transition flex items-center gap-2 text-sm font-medium shadow-sm">
+                <i class="fa-solid fa-layer-group"></i> 全部
+            </button>
+
+            <button onclick="setFilter('healthy')" id="btn-filter-healthy" 
+                class="px-4 py-2 rounded-xl border border-stone-200 bg-white text-stone-600 hover:border-green-300 hover:bg-green-50 transition flex items-center gap-2 text-sm font-medium shadow-sm">
+                <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                健康 (<span id="statHealthy">0</span>)
+            </button>
+
+            <button onclick="setFilter('thirsty')" id="btn-filter-thirsty" 
+                class="px-4 py-2 rounded-xl border border-stone-200 bg-white text-stone-600 hover:border-red-300 hover:bg-red-50 transition flex items-center gap-2 text-sm font-medium shadow-sm">
+                <div class="w-2 h-2 rounded-full bg-red-500"></div>
+                口渴 (<span id="statThirsty">0</span>)
+            </button>
+            
+            <div id="dragHint" class="ml-auto text-xs text-stone-400 flex items-center gap-1 transition-opacity">
+                <i class="fa-solid fa-circle-info"></i> 拖曳整張卡片可調整順序
+            </div>
+        </div>
+
+        <!-- 植物列表網格 -->
+        <div id="plantGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- 這裡會由 JS 動態插入卡片 -->
+        </div>
+
+        <!-- 空狀態 (無植物時顯示) -->
+        <div id="emptyState" class="hidden flex flex-col items-center justify-center py-20 text-center">
+            <div class="bg-stone-200 p-6 rounded-full mb-6">
+                <i class="fa-solid fa-seedling text-4xl text-stone-400"></i>
+            </div>
+            <h3 class="text-xl font-bold text-stone-700 mb-2">還沒有植物夥伴</h3>
+            <p class="text-stone-500 max-w-xs mx-auto mb-6">點擊上方的「新增植物」按鈕，開始記錄您的綠色生活吧！</p>
+            <button onclick="openAddModal()" class="text-nature-600 font-medium hover:underline">立即新增</button>
+        </div>
+
+    </main>
+
+    <!-- 新增懸浮按鈕 (FAB) - 手機版專用 -->
+    <button onclick="openAddModal()" class="md:hidden fixed bottom-8 right-6 w-14 h-14 bg-nature-600 text-white rounded-full shadow-xl shadow-nature-300 hover:bg-nature-700 hover:scale-105 active:scale-95 transition-all duration-300 z-40 flex items-center justify-center cursor-pointer" aria-label="新增植物">
+        <i class="fa-solid fa-plus text-2xl"></i>
+    </button>
+
+    <footer class="bg-white border-t border-stone-200 py-6 mt-8">
+        <div class="max-w-6xl mx-auto px-4 text-center text-stone-400 text-sm">
+            <p>&copy; 2025 植感生活</p>
+        </div>
+    </footer>
+
+    <!-- 通知 Toast -->
+    <div id="toast" class="fixed bottom-28 right-5 bg-stone-800 text-white px-6 py-3 rounded-lg shadow-2xl transform translate-y-20 opacity-0 transition-all duration-300 z-[70] flex items-center gap-3 pointer-events-none">
+        <i class="fa-solid fa-check-circle text-green-400"></i>
+        <span id="toastMsg">操作成功</span>
+    </div>
+
+    <!-- 圖片處理 Canvas (隱藏) -->
+    <canvas id="imageCanvas" class="hidden"></canvas>
+
+    <script>
+        // --- 資料與狀態管理 ---
+        let plants = JSON.parse(localStorage.getItem('myPlants')) || [];
+        let currentFilter = 'all'; 
+        let sortableInstance = null;
+        let tempCustomImage = null; // 暫存上傳的圖片
+        let plantToDeleteId = null; // 暫存要刪除的植物 ID
+
+        const plantImages = [
+            { id: 'plant-1', url: 'https://symbl-cdn.com/i/webp/d9/473ff79758f677cb8879408da5fc79.webp', name: '多肉' },
+            { id: 'plant-2', url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTx92rCCJjkyaoA9Kp5-QqpRg7_8vWC1KOzScYiIhKtnBqV3_pt5KzTrKMJQSTEhH7kBL8&usqp=CAU', name: '一般' },
+            { id: 'plant-3', url: 'https://images.unsplash.com/photo-1501004318641-b39e6451bec6', name: '龜背芋' },
+            { id: 'plant-4', url: 'https://symbl-cdn.com/i/webp/c5/75a32ad82d8b9e2b0baf5fb46a7f5d.webp', name: '琴葉榕' },
+            { id: 'plant-5', url: 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b', name: '黃金葛' },
+            { id: 'plant-6', url: 'https://cdn02.pinkoi.com/wp-content/uploads/sites/7/2022/05/16034006/AnyConv.com__01-12.webp', name: '虎尾蘭' }
+          ];
+
+        // --- 初始化 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            renderIconSelector();
+            renderPlants();
+            initSortable();
+            updateFilterUI(); 
+        });
+
+        // --- 拖曳排序功能 ---
+        function initSortable() {
+            const grid = document.getElementById('plantGrid');
+            sortableInstance = new Sortable(grid, {
+                animation: 150,
+                filter: 'button, input, textarea, a', 
+                preventOnFilter: false, 
+                ghostClass: 'sortable-ghost',
+                dragClass: 'sortable-drag',
+                delay: 100, 
+                delayOnTouchOnly: true,
+                onEnd: function (evt) {
+                    const newOrderIds = Array.from(grid.children).map(card => parseInt(card.dataset.id));
+                    const plantMap = new Map(plants.map(p => [p.id, p]));
+                    plants = newOrderIds.map(id => plantMap.get(id));
+                    saveData();
+                }
+            });
+        }
+
+        // --- 核心邏輯功能 ---
+        function setFilter(filterType) {
+            currentFilter = filterType;
+            renderPlants();
+            updateFilterUI();
+        }
+
+        function updateFilterUI() {
+            const buttons = {
+                'all': document.getElementById('btn-filter-all'),
+                'healthy': document.getElementById('btn-filter-healthy'),
+                'thirsty': document.getElementById('btn-filter-thirsty')
+            };
+
+            Object.values(buttons).forEach(btn => {
+                if(btn) btn.className = 'px-4 py-2 rounded-xl border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 transition flex items-center gap-2 text-sm font-medium shadow-sm';
+            });
+
+            const activeClass = 'bg-stone-800 text-white border-stone-800 hover:bg-stone-700 hover:border-stone-700 shadow-md transform scale-105';
+            
+            if (currentFilter === 'all' && buttons['all']) {
+                buttons['all'].className = `px-4 py-2 rounded-xl border transition flex items-center gap-2 text-sm font-medium ${activeClass}`;
+            } else if (currentFilter === 'healthy' && buttons['healthy']) {
+                buttons['healthy'].className = `px-4 py-2 rounded-xl border border-green-500 bg-green-500 text-white hover:bg-green-600 hover:border-green-600 transition flex items-center gap-2 text-sm font-medium shadow-md transform scale-105`;
+            } else if (currentFilter === 'thirsty' && buttons['thirsty']) {
+                buttons['thirsty'].className = `px-4 py-2 rounded-xl border border-red-500 bg-red-500 text-white hover:bg-red-600 hover:border-red-600 transition flex items-center gap-2 text-sm font-medium shadow-md transform scale-105`;
+            }
+
+            const dragHint = document.getElementById('dragHint');
+            if(dragHint) {
+                if (currentFilter === 'all') {
+                    if(sortableInstance) sortableInstance.option('disabled', false);
+                    dragHint.classList.remove('opacity-0');
+                } else {
+                    if(sortableInstance) sortableInstance.option('disabled', true);
+                    dragHint.classList.add('opacity-0');
+                }
+            }
+        }
+
+        // --- 表單 Modal ---
+        function openAddModal() {
+            // 加入 overflow-hidden 防止背景捲動
+            document.body.classList.add('overflow-hidden');
+            
+            resetForm();
+            document.getElementById('formTitle').innerHTML = '<i class="fa-solid fa-seedling text-nature-500"></i> 新增您的綠色夥伴';
+            document.getElementById('submitBtnText').innerText = '加入清單';
+            document.getElementById('lastWateredDate').valueAsDate = new Date();
+            showModal();
+        }
+
+        function openEditModal(id) {
+            // 加入 overflow-hidden 防止背景捲動
+            document.body.classList.add('overflow-hidden');
+
+            const plant = plants.find(p => p.id === id);
+            if (!plant) return;
+
+            document.getElementById('editPlantId').value = plant.id;
+            document.getElementById('plantName').value = plant.name;
+            document.getElementById('waterFreq').value = plant.frequency;
+            document.getElementById('plantNotes').value = plant.notes || '';
+            
+            const date = new Date(plant.lastWatered);
+            const dateString = date.toISOString().split('T')[0];
+            document.getElementById('lastWateredDate').value = dateString;
+
+            // 判斷是否為自定義圖片 (Base64) 還是預設圖片 URL
+            const isCustomImage = plant.image.startsWith('data:image');
+            
+            if (isCustomImage) {
+                // 如果是自定義圖片，設定到暫存並顯示在第一個選項
+                tempCustomImage = plant.image;
+                document.getElementById('customImageData').value = plant.image;
+                selectIcon('custom-upload');
+                // 更新上傳按鈕的預覽
+                const uploadPreview = document.getElementById('uploadPreview');
+                if(uploadPreview) {
+                    uploadPreview.src = plant.image;
+                    document.getElementById('uploadIcon').classList.add('hidden');
+                    uploadPreview.classList.remove('hidden');
+                }
+            } else {
+                // 預設圖片
+                const foundImg = plantImages.find(img => img.url === plant.image);
+                selectIcon(foundImg ? foundImg.id : 'plant-1');
+                tempCustomImage = null;
+                document.getElementById('customImageData').value = '';
+                resetUploadButton();
+            }
+
+            document.getElementById('formTitle').innerHTML = '<i class="fa-solid fa-pen-to-square text-nature-500"></i> 編輯植物資訊';
+            document.getElementById('submitBtnText').innerText = '儲存修改';
+
+            showModal();
+        }
+
+        function showModal() {
+            const modal = document.getElementById('formModal');
+            const content = document.getElementById('formContent');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeForm() {
+            // 移除 overflow-hidden 恢復背景捲動
+            document.body.classList.remove('overflow-hidden');
+
+            const modal = document.getElementById('formModal');
+            const content = document.getElementById('formContent');
+            modal.classList.add('opacity-0');
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        function resetForm() {
+            document.getElementById('plantForm').reset();
+            document.getElementById('editPlantId').value = '';
+            document.getElementById('customImageData').value = '';
+            tempCustomImage = null;
+            resetUploadButton();
+            selectIcon(plantImages[0].id);
+        }
+
+        function resetUploadButton() {
+            const uploadIcon = document.getElementById('uploadIcon');
+            const uploadPreview = document.getElementById('uploadPreview');
+            const loader = document.getElementById('uploadLoader');
+            
+            if(uploadIcon) {
+                uploadIcon.classList.remove('hidden', 'opacity-0');
+            }
+            if(uploadPreview) {
+                uploadPreview.classList.add('hidden');
+                uploadPreview.src = '';
+            }
+            if(loader) loader.classList.add('hidden');
+        }
+
+        // --- 圖片處理 ---
+        function triggerImageUpload() {
+            document.getElementById('imageUploadInput').click();
+        }
+
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // 顯示 Loading (不破壞 HTML 結構)
+            const loader = document.getElementById('uploadLoader');
+            const icon = document.getElementById('uploadIcon');
+            if(loader) loader.classList.remove('hidden');
+            if(icon) icon.classList.add('opacity-0'); // 隱藏圖示但保留佔位
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    // 壓縮與調整大小
+                    const canvas = document.getElementById('imageCanvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // 設定最大尺寸
+                    const MAX_WIDTH = 600;
+                    const MAX_HEIGHT = 600;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width *= MAX_HEIGHT / height;
+                            height = MAX_HEIGHT;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // 輸出壓縮後的 Base64 (JPEG, 0.7 品質)
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    
+                    // 儲存並預覽
+                    tempCustomImage = dataUrl;
+                    document.getElementById('customImageData').value = dataUrl;
+                    
+                    // 更新 UI
+                    const uploadPreview = document.getElementById('uploadPreview');
+                    const uploadIcon = document.getElementById('uploadIcon');
+                    const loader = document.getElementById('uploadLoader');
+                    
+                    if(uploadPreview) {
+                        uploadPreview.src = dataUrl;
+                        uploadPreview.classList.remove('hidden');
+                    }
+                    if(uploadIcon) {
+                        // 隱藏圖示
+                        uploadIcon.classList.add('hidden');
+                        uploadIcon.classList.remove('opacity-0'); // 移除暫時的 opacity
+                    }
+                    if(loader) loader.classList.add('hidden');
+
+                    // 選中此選項
+                    selectIcon('custom-upload');
+                    
+                    showToast('照片上傳成功！');
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // --- 表單提交 ---
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            const editId = document.getElementById('editPlantId').value;
+            const name = document.getElementById('plantName').value;
+            const freq = parseInt(document.getElementById('waterFreq').value);
+            const iconId = document.getElementById('selectedIcon').value;
+            const customData = document.getElementById('customImageData').value;
+            const dateVal = document.getElementById('lastWateredDate').value;
+            const notes = document.getElementById('plantNotes').value;
+
+            // 決定使用哪張圖片：如果是 custom-upload 且有資料，就用自定義的；否則找預設圖
+            let finalImageUrl = '';
+            if (iconId === 'custom-upload' && customData) {
+                finalImageUrl = customData;
+            } else {
+                const imgObj = plantImages.find(img => img.id === iconId) || plantImages[0];
+                finalImageUrl = imgObj.url;
+            }
+
+            const dateObj = new Date(dateVal);
+            dateObj.setHours(12, 0, 0, 0); 
+            const timestamp = dateObj.getTime();
+
+            if (editId) {
+                const index = plants.findIndex(p => p.id == editId);
+                if (index !== -1) {
+                    plants[index] = {
+                        ...plants[index],
+                        name: name,
+                        frequency: freq,
+                        lastWatered: timestamp,
+                        image: finalImageUrl,
+                        notes: notes
+                    };
+                    showToast('已更新植物資訊！');
+                }
+            } else {
+                const newPlant = {
+                    id: Date.now(),
+                    name: name,
+                    frequency: freq,
+                    lastWatered: timestamp, 
+                    image: finalImageUrl,
+                    notes: notes
+                };
+                plants.unshift(newPlant);
+                showToast('已新增植物夥伴！');
+            }
+
+            saveData();
+            setFilter('all'); 
+            closeForm();
+        }
+
+        // --- 渲染圖片選擇器 ---
+        function renderIconSelector() {
+            const container = document.getElementById('iconSelector');
+            
+            // 1. 上傳按鈕 HTML
+            const uploadBtnHtml = `
+                <div onclick="triggerImageUpload()" 
+                     id="option-custom-upload"
+                     class="cursor-pointer rounded-lg overflow-hidden border-2 border-dashed border-stone-300 hover:border-nature-500 hover:bg-stone-50 transition relative h-14 md:h-16 w-full icon-option flex items-center justify-center group" 
+                     data-id="custom-upload">
+                    
+                    <!-- Loading Spinner (預設隱藏) -->
+                    <div id="uploadLoader" class="hidden absolute inset-0 flex items-center justify-center bg-stone-50 z-20">
+                        <div class="loader"></div>
+                    </div>
+
+                    <!-- 預設顯示相機圖示 -->
+                    <div id="uploadIcon" class="flex flex-col items-center justify-center text-stone-400 group-hover:text-nature-600 transition-opacity duration-200">
+                        <i class="fa-solid fa-camera text-xl mb-0.5"></i>
+                        <span class="text-[10px] font-medium">拍照/上傳</span>
+                    </div>
+
+                    <!-- 上傳後的預覽圖 (預設隱藏) -->
+                    <img id="uploadPreview" src="" class="hidden w-full h-full object-cover absolute inset-0 z-10">
+                    
+                    <!-- 選中時的遮罩 (JS 控制) -->
+                    <div id="uploadCheckOverlay" class="hidden absolute inset-0 bg-nature-500/20 flex items-center justify-center z-30">
+                        <i class="fa-solid fa-check text-white drop-shadow-md"></i>
+                    </div>
+                </div>
+            `;
+
+            // 2. 預設圖片 HTML
+            const presetsHtml = plantImages.map((img, index) => `
+                <div onclick="selectIcon('${img.id}')" 
+                     class="cursor-pointer rounded-lg overflow-hidden border-2 ${index === 0 ? 'border-nature-500 ring-2 ring-nature-200' : 'border-transparent'} hover:border-nature-300 transition relative h-14 md:h-16 w-full icon-option preset-option" 
+                     data-id="${img.id}">
+                    <img src="${img.url}" class="w-full h-full object-cover">
+                    ${index === 0 ? '<div class="absolute inset-0 bg-nature-500/20 flex items-center justify-center"><i class="fa-solid fa-check text-white drop-shadow-md"></i></div>' : ''}
+                </div>
+            `).join('');
+
+            container.innerHTML = uploadBtnHtml + presetsHtml;
+            document.getElementById('selectedIcon').value = plantImages[0].id;
+        }
+
+        function selectIcon(id) {
+            // 如果選的是自定義上傳，但還沒上傳圖片，則觸發上傳窗
+            if (id === 'custom-upload' && !document.getElementById('customImageData').value && !tempCustomImage) {
+                triggerImageUpload();
+                return;
+            }
+
+            // 重置所有選項樣式
+            document.querySelectorAll('.icon-option').forEach(el => {
+                // 恢復上傳按鈕的 dashed border
+                if(el.id === 'option-custom-upload') {
+                    el.classList.remove('border-nature-500', 'ring-2', 'ring-nature-200', 'border-solid');
+                    el.classList.add('border-stone-300', 'border-dashed');
+                    document.getElementById('uploadCheckOverlay').classList.add('hidden');
+                } else {
+                    el.classList.remove('border-nature-500', 'ring-2', 'ring-nature-200');
+                    el.classList.add('border-transparent');
+                    // 移除一般選項的遮罩
+                    const overlay = el.querySelector('div.absolute');
+                    if(overlay) overlay.remove();
+                }
+            });
+
+            // 設定選中項目樣式
+            const selected = document.querySelector(`.icon-option[data-id="${id}"]`);
+            if(selected) {
+                if (id === 'custom-upload') {
+                    selected.classList.remove('border-stone-300', 'border-dashed');
+                    selected.classList.add('border-nature-500', 'ring-2', 'ring-nature-200', 'border-solid');
+                    document.getElementById('uploadCheckOverlay').classList.remove('hidden');
+                } else {
+                    selected.classList.remove('border-transparent');
+                    selected.classList.add('border-nature-500', 'ring-2', 'ring-nature-200');
+                    selected.innerHTML += '<div class="absolute inset-0 bg-nature-500/20 flex items-center justify-center"><i class="fa-solid fa-check text-white drop-shadow-md"></i></div>';
+                }
+                document.getElementById('selectedIcon').value = id;
+            }
+        }
+
+        // 4. 刪除植物
+        function deletePlant(id) {
+            // 使用自定義 Modal 取代 confirm()，避免在 iframe 中被阻擋
+            plantToDeleteId = id;
+            const modal = document.getElementById('deleteModal');
+            const content = document.getElementById('deleteModalContent');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeDeleteModal() {
+            plantToDeleteId = null;
+            const modal = document.getElementById('deleteModal');
+            const content = document.getElementById('deleteModalContent');
+            modal.classList.add('opacity-0');
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        function confirmDelete() {
+            if (plantToDeleteId) {
+                plants = plants.filter(p => p.id !== plantToDeleteId);
+                saveData();
+                renderPlants();
+                showToast('已移除植物');
+                closeDeleteModal();
+            }
+        }
+
+        // 5. 快速澆水動作
+        function waterPlant(id) {
+            const plant = plants.find(p => p.id === id);
+            if (plant) {
+                plant.lastWatered = Date.now();
+                saveData();
+                renderPlants();
+                showToast(`已幫 ${plant.name} 補充水分！💧`);
+            }
+        }
+
+        // 6. 計算與渲染列表
+        function renderPlants() {
+            const grid = document.getElementById('plantGrid');
+            const emptyState = document.getElementById('emptyState');
+            const statsBar = document.getElementById('statsBar');
+            
+            grid.innerHTML = '';
+            
+            if (plants.length === 0) {
+                emptyState.classList.remove('hidden');
+                statsBar.classList.add('hidden');
+                return;
+            } else {
+                emptyState.classList.add('hidden');
+                statsBar.classList.remove('hidden');
+            }
+
+            let healthyCount = 0;
+            let thirstyCount = 0;
+
+            plants.forEach(plant => {
+                if (needsWater(plant)) thirstyCount++;
+                else healthyCount++;
+            });
+
+            const filteredPlants = plants.filter(plant => {
+                const isThirsty = needsWater(plant);
+                if (currentFilter === 'healthy') return !isThirsty;
+                if (currentFilter === 'thirsty') return isThirsty;
+                return true; 
+            });
+
+            filteredPlants.forEach(plant => {
+                const now = Date.now();
+                const diffTime = now - plant.lastWatered;
+                const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+                const daysLeft = plant.frequency - diffDays;
+                
+                const isThirsty = daysLeft <= 0;
+                
+                const borderClass = isThirsty 
+                    ? 'ring-2 ring-red-400 border-red-200 shadow-red-100' 
+                    : 'border-stone-100 hover:border-nature-300 hover:shadow-lg';
+                
+                const statusBadge = isThirsty
+                    ? `<span class="bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1"><i class="fa-solid fa-droplet"></i> 口渴了！</span>`
+                    : `<span class="bg-nature-100 text-nature-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1"><i class="fa-solid fa-check"></i> 健康</span>`;
+
+                const daysText = isThirsty
+                    ? `<span class="text-red-500 font-bold">已延遲 ${Math.abs(daysLeft)} 天</span>`
+                    : `<span class="text-stone-500">還有 ${daysLeft} 天</span>`;
+
+                const progressBarColor = isThirsty ? 'bg-red-400' : 'bg-nature-500';
+                let progressPercent = Math.max(0, (daysLeft / plant.frequency) * 100);
+                if (isThirsty) progressPercent = 0;
+
+                const notesHtml = plant.notes 
+                    ? `<div class="mt-3 pt-3 border-t border-dashed border-stone-200 text-xs text-stone-500 italic truncate"><i class="fa-regular fa-note-sticky mr-1"></i> ${plant.notes}</div>` 
+                    : '';
+                
+                const draggableClass = currentFilter === 'all' ? 'draggable-card' : '';
+
+                const cardHTML = `
+                    <div class="card-enter bg-white rounded-2xl overflow-hidden shadow-sm transition-all duration-300 relative group border ${borderClass} plant-card ${draggableClass}" data-id="${plant.id}">
+                        
+                        <div class="absolute top-3 right-3 flex gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition z-10">
+                            <button onclick="event.stopPropagation(); openEditModal(${plant.id})" class="bg-white/90 p-2 rounded-full text-stone-500 hover:text-nature-600 shadow-sm hover:shadow-md transition" title="編輯">
+                                <i class="fa-solid fa-pen"></i>
+                            </button>
+                            <button onclick="event.stopPropagation(); deletePlant(${plant.id})" class="bg-white/90 p-2 rounded-full text-stone-400 hover:text-red-500 shadow-sm hover:shadow-md transition" title="刪除">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+
+                        <div class="flex h-32 relative">
+                            <div class="w-1/3 overflow-hidden pl-2 py-2">
+                                <img src="${plant.image}" class="w-full h-full object-cover plant-img rounded-lg" alt="${plant.name}">
+                            </div>
+                            <div class="w-2/3 p-4 flex flex-col justify-between relative bg-gradient-to-r from-transparent to-stone-50/50">
+                                <div class="pl-2">
+                                    <div class="flex justify-between items-start mb-1">
+                                        <h3 class="text-lg font-bold text-stone-800 truncate pr-6" title="${plant.name}">${plant.name}</h3>
+                                    </div>
+                                    <div class="flex items-center gap-2 mb-2">
+                                        ${statusBadge}
+                                    </div>
+                                </div>
+                                <div class="text-xs text-stone-400 pl-2">
+                                    <i class="fa-regular fa-clock mr-1"></i> 頻率：每 ${plant.frequency} 天
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="px-5 py-4 border-t border-stone-50">
+                            <div class="flex justify-between items-end mb-2">
+                                <span class="text-sm text-stone-500">下次澆水</span>
+                                <span class="text-sm">${daysText}</span>
+                            </div>
+                            
+                            <div class="w-full h-2 bg-stone-100 rounded-full mb-4 overflow-hidden">
+                                <div class="h-full ${progressBarColor} rounded-full transition-all duration-1000" style="width: ${progressPercent}%"></div>
+                            </div>
+
+                            <button onclick="event.stopPropagation(); waterPlant(${plant.id})" 
+                                class="w-full py-2.5 rounded-xl flex items-center justify-center gap-2 font-medium transition water-btn 
+                                ${isThirsty 
+                                    ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-200 shadow-md animate-pulse' 
+                                    : 'bg-nature-50 text-nature-700 hover:bg-nature-100 border border-nature-200'}">
+                                <i class="fa-solid fa-faucet-drip"></i> 
+                                ${isThirsty ? '快幫我澆水！' : '記錄澆水'}
+                            </button>
+                            
+                            <div class="flex justify-between items-center mt-2 text-[10px] text-stone-300">
+                                <span>上次：${new Date(plant.lastWatered).toLocaleDateString()}</span>
+                            </div>
+
+                            ${notesHtml}
+                        </div>
+                    </div>
+                `;
+                grid.innerHTML += cardHTML;
+            });
+
+            const statHealthyEl = document.getElementById('statHealthy');
+            const statThirstyEl = document.getElementById('statThirsty');
+            if(statHealthyEl) statHealthyEl.innerText = healthyCount;
+            if(statThirstyEl) statThirstyEl.innerText = thirstyCount;
+        }
+
+        function needsWater(plant) {
+            const now = Date.now();
+            const diffTime = now - plant.lastWatered;
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays >= plant.frequency;
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem('myPlants', JSON.stringify(plants));
+            } catch (e) {
+                if (e.name === 'QuotaExceededError') {
+                    showToast('儲存失敗！圖片可能太多或太大，請嘗試刪除一些植物。');
+                } else {
+                    showToast('儲存時發生未知錯誤。');
+                }
+            }
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            const msgEl = document.getElementById('toastMsg');
+            msgEl.innerText = msg;
+            
+            toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
